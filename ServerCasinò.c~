@@ -1,0 +1,254 @@
+#include <stdio.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/types.h> 
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <mysql.h>
+
+void exec(char* cmd);
+void analSocket(int); 
+void error(const char *msg);
+
+
+MYSQL *conn;
+MYSQL_RES *res;
+MYSQL_ROW row;
+char *server = "localhost";
+char *user = "root";
+char *password = "TMY9UGBR";
+char *database = "Casino";
+char cmdOUT[128];
+
+main()
+{
+
+	system("tput reset");
+	system("hostname -I | sed 's/.$//' > serverIP.txt");
+	system("chmod 777 serverIP.txt");
+	
+	system("echo \"\e[38;5;28mSERVER CASINÒ\n\e[0m\"");
+   
+	/* Connect to database */
+	conn = mysql_init(NULL); 
+   if (!mysql_real_connect(conn, server, user, password, database, 0, NULL, 0))
+	{
+      fprintf(stderr, "%s\n", mysql_error(conn));
+      exit(1);
+   }
+
+	int sockfd, newsockfd, portno, pid;
+   socklen_t clilen;
+   struct sockaddr_in serv_addr, cli_addr;
+
+	sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	if (sockfd < 0) system("echo \"\e[38;5;160m-ERRO%OPENING_SOCKET\e[0m\"");
+	bzero((char *) &serv_addr, sizeof(serv_addr));
+	portno = 54321;
+	serv_addr.sin_family = AF_INET;
+	serv_addr.sin_addr.s_addr = INADDR_ANY;
+	serv_addr.sin_port = htons(portno);
+	if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) system("echo \"\e[38;5;160m-ERRO%BINDING\e[0m\"");
+	listen(sockfd,5);
+	clilen = sizeof(cli_addr);
+	while (1) 
+	{
+		newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
+		if (newsockfd < 0) system("echo \"\e[38;5;160m-ERRO%ACCEPT\e[0m\"");
+		pid = fork();
+		if (pid < 0) system("echo \"\e[38;5;160m-ERRO%FORK\e[0m\"");
+		if (pid == 0)
+		{
+			close(sockfd);
+			analSocket(newsockfd);
+			exit(0);
+		}
+		else close(newsockfd);
+	} //fine while
+	close(sockfd);
+
+   /* close connection */
+   mysql_free_result(res);
+   mysql_close(conn);
+
+	return 0;
+}
+
+
+void analSocket(int sock)
+{
+   int n,i;
+   char buffer[256];
+   char reqType[5];
+
+   bzero(buffer,256);
+   n = read(sock,buffer,255);
+   if (n < 0) system("echo \"\e[38;5;160m-ERRO%READING_SOCKET\e[0m\"");
+	system("echo -n \"\e[38;5;154m\"");   
+	printf("-%s\n",buffer);
+	system("echo -n \"\e[0m\"");
+
+	for(i=0;i<4;i++) reqType[i]=buffer[i];
+	reqType[4]='\0';
+
+//°º¤ø,¸¸,ø¤º°`°º¤ø,¸,ø¤°º¤ø,¸¸,ø¤º°`°º¤ø,¸   FUNZIONE LOGIN  RGST%create/delete(flag)%username%password  0=reg 1=del                          
+
+	if(!strcmp(reqType,"RGST"))
+	{
+		char dc, usr[256], pwd[256]; 
+		short int count=0;
+		char *token;
+		const char delimeter[2]="%";
+		char query[500];
+
+		token = strtok(buffer, delimeter);
+		while( token != NULL ) 
+   	{
+			if(count==1) dc=token[0];
+			if(count==2) strcpy(usr,token);
+			if(count==3) strcpy(pwd,token);
+			count++;
+			token = strtok(NULL, delimeter);
+   	}
+
+		if(dc=='0') //(╯°□°)︻╦̵̵͇̿̿̿̿══╤─ - - - REGISTRA UTENTE
+		{
+			
+			strcpy(query,"SELECT username FROM Giocatore WHERE username=\"");
+			strcat(query,usr);
+			strcat(query,"\"");
+   		system("echo -n \"\e[38;5;99m\"");
+			printf("-QERY:%c%s\n",37,query);
+			system("echo -n \"\e[0m\"");
+
+			if (mysql_query(conn, query)) 
+			{
+				fprintf(stderr, "%s\n", mysql_error(conn));
+				exit(1);
+			}
+			res = mysql_use_result(conn);
+			if((row = mysql_fetch_row(res)) == NULL) //lo username non è stato ancora usato
+			{
+				mysql_free_result(res);
+				strcpy(query,"INSERT INTO Giocatore(username,password,fiches) VALUES(\"");
+				strcat(query,usr);
+				strcat(query,"\",\"");
+				strcat(query,pwd); 
+				strcat(query,"\",\"5000\")");
+				system("echo -n \"\e[38;5;99m\"");
+				printf("-QERY:%c%s\n",37,query);
+				system("echo -n \"\e[0m\"");
+
+
+				if (mysql_query(conn, query)) 
+				{
+					fprintf(stderr, "%s\n", mysql_error(conn));
+					exit(1);
+				}
+				mysql_use_result(conn);
+				n = write(sock,"RGST%OK",7);
+				if (n < 0) system("echo \"\e[38;5;160m-ERRO%WRITING_SOCKET\e[0m\"");
+				if (n >= 0)	system("echo \"\e[38;5;39m-RGST%OK\e[0m\"");
+			}
+			else //username già in uso
+			{
+				n = write(sock,"RGST%ERR",8);
+				if (n < 0) system("echo \"\e[38;5;160m-ERRO%WRITING_SOCKET\e[0m\"");
+				if (n >= 0)	system("echo \"\e[38;5;39m-RGST%ERR\e[0m\"");
+			}
+
+			
+		} 
+
+		if(dc=='1')  //(╯°□°)︻╦̵̵͇̿̿̿̿══╤─ - - - ELIMINA UTENTE
+		{
+			strcpy(query,"DELETE FROM Giocatore WHERE username=\"");
+			strcat(query,usr);
+			strcat(query,"\"");
+			system("echo -n \"\e[38;5;99m\"");
+			printf("-QERY:%c%s\n",37,query);
+			system("echo -n \"\e[0m\"");
+
+		}		
+
+	}
+
+//°º¤ø,¸¸,ø¤º°`°º¤ø,¸,ø¤°º¤ø,¸¸,ø¤º°`°º¤ø,¸   FUNZIONE LOGIN  LOGI%kmli/dkmli(flag)%username%password  0=dk 1=k                
+	
+	if(!strcmp(reqType,"LOGI"))
+	{
+		char keep, usr[256], pwd[256]; 
+		short int count=0;
+		char *token;
+		const char delimeter[2]="%";
+		char query[500];
+
+		token = strtok(buffer, delimeter);
+		while( token != NULL ) 
+   	{
+			if(count==1) keep=token[0];
+			if(count==2) strcpy(usr,token);
+			if(count==3) strcpy(pwd,token);
+			count++;
+			token = strtok(NULL, delimeter);
+   	}
+
+		strcpy(query,"SELECT username FROM Giocatore WHERE username=\"");
+		strcat(query,usr);
+		strcat(query,"\" AND password=\"");
+		strcat(query,pwd);
+		strcat(query,"\"");
+		system("echo -n \"\e[38;5;99m\"");
+		printf("-QERY:%c%s\n",37,query);
+		system("echo -n \"\e[0m\"");
+
+		if (mysql_query(conn, query)) 
+		{
+			fprintf(stderr, "%s\n", mysql_error(conn));
+			exit(1);
+		}
+		res = mysql_use_result(conn);
+		if((row = mysql_fetch_row(res)) == NULL) //login errato
+		{
+			n = write(sock,"LOGI%ERR",8);
+			if (n < 0) system("echo \"\e[38;5;160m-ERRO%WRITING_SOCKET\e[0m\"");
+			if (n >= 0)	system("echo \"\e[38;5;39m-LOGI%ERR\e[0m\"");
+		}
+		else
+		{
+			n = write(sock,"LOGI%OK",7);
+			if (n < 0) system("echo \"\e[38;5;160m-ERRO%WRITING_SOCKET\e[0m\"");
+			if (n >= 0)	system("echo \"\e[38;5;39m-LOGI%OK\e[0m\"");	
+		}
+
+	}
+
+
+}
+
+
+/*
+	+-------------------------------------------------------------------------------------------+
+	|                                             EXEC                                          |
+	+-------------------------------------------------------------------------------------------+
+*/
+/* funzione che restituisce una stringa dopo aver eseguito un comando da terminale  */
+void exec(char* cmd) {
+    FILE* pipe = popen(cmd, "r");
+    if (!pipe) return "ERROR";
+    char buffer[128];
+    while(!feof(pipe)) {
+    	if(fgets(buffer, 128, pipe) != NULL)
+    		strcat(cmdOUT,buffer);
+    }
+    pclose(pipe);
+	
+	/*char dim[15];
+	exec("xdpyinfo | grep -Po '(?<=(dimensions:)).*(?= pixels)' | sed 's/ //g'");
+	strcpy(dim,cmdOUT);	
+	dim[strlen(dim)-1]='\0';*/
+}
+
+
+//gcc -o ServerCasino $(mysql_config --cflags) ServerCasino.c $(mysql_config --libs) -w
